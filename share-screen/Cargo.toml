@@ -1,0 +1,23 @@
+[package]
+name = "share-screen"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "share-screen"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+ctrlc.workspace = true
+gstreamer.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Cross-platform config storage + GUI + serialization.
+dirs = "5"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+eframe = { version = "0.30", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+egui = "0.30"

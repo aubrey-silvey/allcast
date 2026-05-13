@@ -1,0 +1,17 @@
+[Unit]
+Description=share-screen receiver — idle daemon that activates on RTP traffic
+# Tie to the user's graphical session so we get WAYLAND_DISPLAY etc.
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+EnvironmentFile=-%h/.config/share-screen-receiver.env
+ExecStart=/usr/local/bin/share-screen-receiver
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical-session.target

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>share-screen viewer</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd;
+               font: 14px/1.4 system-ui, sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  video { flex: 1 1 auto; min-height: 0; width: 100%; background: #000;
+          object-fit: contain; }
+  #bar { display: flex; gap: 12px; align-items: center;
+         padding: 8px 12px; background: #111; }
+  button { padding: 6px 14px; background: #2a2a2a; color: #eee;
+           border: 1px solid #444; border-radius: 4px; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #status { color: #888; font-variant-numeric: tabular-nums; }
+  #codec  { color: #6cf; margin-left: auto; }
+</style>
+</head>
+<body>
+<div id="app">
+  <video id="player" autoplay playsinline muted></video>
+  <div id="bar">
+    <button id="start">Connect</button>
+    <button id="stop"  disabled>Disconnect</button>
+    <button id="fs">Full screen</button>
+    <span id="status">idle</span>
+    <span id="codec"></span>
+  </div>
+</div>
+<script>
+const video  = document.getElementById('player');
+const status = document.getElementById('status');
+const codec  = document.getElementById('codec');
+const start  = document.getElementById('start');
+const stop   = document.getElementById('stop');
+const fs     = document.getElementById('fs');
+
+let pc = null;
+
+function setStatus(s)  { status.textContent = s; }
+function setCodec(s)   { codec.textContent  = s; }
+
+async function connect() {
+  start.disabled = true;
+  setStatus('connecting');
+  pc = new RTCPeerConnection();
+  pc.addTransceiver('video', { direction: 'recvonly' });
+  pc.ontrack = (e) => {
+    video.srcObject = e.streams[0];
+    setStatus('streaming');
+  };
+  pc.onconnectionstatechange = () => {
+    setStatus(pc.connectionState);
+    if (pc.connectionState === 'connected') stop.disabled = false;
+    if (['failed','closed','disconnected'].includes(pc.connectionState)) {
+      stop.disabled = true; start.disabled = false;
+    }
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  await new Promise(r => {
+    if (pc.iceGatheringState === 'complete') return r();
+    const check = () => {
+      if (pc.iceGatheringState === 'complete') {
+        pc.removeEventListener('icegatheringstatechange', check);
+        r();
+      }
+    };
+    pc.addEventListener('icegatheringstatechange', check);
+  });
+
+  const resp = await fetch('whep', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/sdp' },
+    body: pc.localDescription.sdp,
+  });
+  if (!resp.ok) {
+    setStatus('WHEP ' + resp.status + ': ' + await resp.text());
+    start.disabled = false;
+    return;
+  }
+  const answer = await resp.text();
+  await pc.setRemoteDescription({ type: 'answer', sdp: answer });
+
+  // Surface which codec was actually negotiated.
+  const m = answer.match(/a=rtpmap:\d+\s+(H265|H264|VP9|VP8|AV1)\b/i);
+  if (m) setCodec(m[1].toUpperCase());
+}
+
+function disconnect() {
+  if (pc) { pc.close(); pc = null; }
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+  }
+  setStatus('idle'); setCodec('');
+  stop.disabled = true; start.disabled = false;
+}
+
+start.addEventListener('click', connect);
+stop .addEventListener('click', disconnect);
+fs   .addEventListener('click', () => video.requestFullscreen?.());
+</script>
+</body>
+</html>
