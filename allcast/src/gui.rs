@@ -11,12 +11,12 @@ pub fn run(initial: Option<Config>) -> Option<Config> {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([560.0, 720.0])
             .with_resizable(true)
-            .with_title("share-screen — configure"),
+            .with_title("allcast — configure"),
         ..Default::default()
     };
     let state_c = state.clone();
     let result_c = result.clone();
-    let r = eframe::run_simple_native("share-screen config", native, move |ctx, _| {
+    let r = eframe::run_simple_native("allcast config", native, move |ctx, _| {
         eframe::egui::CentralPanel::default().show(ctx, |ui| {
             let mut s = state_c.lock().unwrap();
             s.draw(ui);
@@ -72,7 +72,7 @@ impl AppState {
     fn draw(&mut self, ui: &mut eframe::egui::Ui) {
         use eframe::egui::{Color32, ComboBox, RichText};
 
-        ui.heading("share-screen — configuration");
+        ui.heading("allcast — configuration");
         ui.separator();
         ui.add_space(6.0);
 

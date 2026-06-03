@@ -10,7 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
 #[derive(Parser, Debug, Clone)]
-#[command(version, about = "share-screen receiver \u{2014} idle daemon that takes over a configured monitor when an RTP stream arrives.")]
+#[command(version, about = "allcast receiver \u{2014} idle daemon that takes over a configured monitor when an RTP stream arrives.")]
 struct Cli {
     /// UDP port to listen on for RTP packets.
     #[arg(long, env = "LISTEN", default_value_t = 5004)]

@@ -17,7 +17,7 @@ pub fn run(cfg: &Config, stop: Arc<AtomicBool>) -> Result<()> {
 
     let peer = cfg
         .active_peer_address()
-        .ok_or_else(|| anyhow!("no peers configured; run `share-screen config` to add one"))?;
+        .ok_or_else(|| anyhow!("no peers configured; run `allcast config` to add one"))?;
     let (host, port) = resolve_dest(peer)?;
 
     let os = platform::current_os();

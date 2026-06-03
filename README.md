@@ -1,4 +1,4 @@
-# share-screen
+# allcast
 
 Realtime screen replication between two computers, in Rust.
 
@@ -41,7 +41,7 @@ ms-precision wall clock burned into the sender stream.)
 **In progress / queued:**
 
 - macOS Apple Silicon build (avfvideosrc / vtenc / osxvideosink) — code
-  paths exist in `share-screen/src/platform.rs`, never built
+  paths exist in `allcast/src/platform.rs`, never built
 - Windows x86_64 build (d3d11screencapturesrc / mfh265enc / d3d11videosink)
   — same status
 - Native Rust replacement for the Python portal helper (zbus)
@@ -54,8 +54,8 @@ Three crates in one Cargo workspace:
 
 | Crate | Purpose | Status |
 |---|---|---|
-| `share-screen/` | **New unified binary.** Single `share-screen` executable with `send`, `recv`, and `config` subcommands. egui first-run window. Intended to subsume the other two crates once Mac/Windows ports land. | active development |
-| `sender/` | Original standalone sender used for benchmarking. CLI-only, lots of knobs (`--target-usage`, `--rate-control`, `--qp`, …). Linux only. | will be deprecated after `share-screen` ports |
+| `allcast/` | **New unified binary.** Single `allcast` executable with `send`, `recv`, and `config` subcommands. egui first-run window. Intended to subsume the other two crates once Mac/Windows ports land. | active development |
+| `sender/` | Original standalone sender used for benchmarking. CLI-only, lots of knobs (`--target-usage`, `--rate-control`, `--qp`, …). Linux only. | will be deprecated after `allcast` ports |
 | `receiver/` | Original standalone receiver — idle daemon with monitor takeover. Deployed on the Pi 5 via a systemd user unit. | currently the production receiver |
 
 ## Quick start
@@ -64,47 +64,47 @@ Three crates in one Cargo workspace:
 
 ```sh
 # On the Pi (sis@10.0.17.84)
-git clone ssh://git@ipkeeper.silvey.io:2222/share-screen.git
-cd share-screen
+git clone git@github.com:aubrey-silvey/allcast.git
+cd allcast
 ./receiver/install.sh                # builds + installs + enables systemd user unit
-journalctl --user -u share-screen-receiver -f
+journalctl --user -u allcast-receiver -f
 ```
 
 Receiver binds UDP `5004` and idles until traffic arrives. Settings live in
-`~/.config/share-screen-receiver.env`.
+`~/.config/allcast-receiver.env`.
 
 ### Linux sender (current, via Python portal helper)
 
 ```sh
-cd ~/source/share-screen
-cargo build --release -p share-screen-sender
+cd ~/source/allcast
+cargo build --release -p allcast-sender
 
 # /tmp/screencast-portal.py is a small Python script that drives the
 # xdg-desktop-portal screencast flow and execs the sender as a child
 # with the pipewire fd inherited.
 python3 /tmp/screencast-portal.py \
-    target/release/share-screen-sender \
+    target/release/allcast-sender \
     --dest 10.0.17.84:5004 \
     --codec h265 --framerate 30 --bitrate-kbps 12000 --target-usage 2 \
     --source 'pipewiresrc fd=@PW_FD@ path=@NODE_ID@'
 ```
 
-### Unified `share-screen` binary (new)
+### Unified `allcast` binary (new)
 
 ```sh
-cargo run -p share-screen --release
+cargo run -p allcast --release
 # First launch pops the egui config window. Save → starts in the
 # configured role. Re-open the GUI anytime with:
-share-screen config
+allcast config
 
 # Subcommands work too:
-share-screen send       # use saved config
-share-screen recv       # use saved config
-share-screen where      # print path of the config file
-share-screen monitors   # debug: list detected monitors
+allcast send       # use saved config
+allcast recv       # use saved config
+allcast where      # print path of the config file
+allcast monitors   # debug: list detected monitors
 ```
 
-Config lives in `~/.config/share-screen/config.toml` (XDG paths on Mac and
+Config lives in `~/.config/allcast/config.toml` (XDG paths on Mac and
 Windows respectively).
 
 ## Architecture decisions worth knowing
@@ -147,7 +147,7 @@ useful for the benchmarks recorded above.
   No standard protocol lets a client request which output its surface
   appears on. `wlr-output-management-v1` is read-only from clients.
   Practical workaround: configure your Wayland compositor (e.g. labwc
-  `~/.config/labwc/rc.xml`) to place share-screen's surface on the desired
+  `~/.config/labwc/rc.xml`) to place allcast's surface on the desired
   output by class name.
 - **Python portal helper on Linux** — the sender currently needs
   `/tmp/screencast-portal.py` to start a screencast session and hand the
@@ -162,10 +162,8 @@ useful for the benchmarks recorded above.
 
 ## Repository
 
-- Remote: `ssh://git@ipkeeper.silvey.io:2222/share-screen.git` (ipkeeper
-  self-hosted Git). `master` is the trunk; pushes to `dev` would trigger
-  a container build, which is not relevant for this desktop-binary
-  project — don't push there.
+- Remote: `git@github.com:aubrey-silvey/allcast.git` (GitHub). `main` is
+  the trunk.
 - Pi 5 receiver target: `monitor2` / `10.0.17.84`. Keyless SSH from this
   dev box, passwordless sudo on the Pi for the `sis` account; details in
   the local memory.

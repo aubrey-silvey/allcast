@@ -1,10 +1,10 @@
 [package]
-name = "share-screen-receiver"
+name = "allcast-receiver"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "share-screen-receiver"
+name = "allcast-receiver"
 path = "src/main.rs"
 
 [dependencies]

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-pub const APP_DIR: &str = "share-screen";
+pub const APP_DIR: &str = "allcast";
 pub const CONFIG_FILE: &str = "config.toml";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

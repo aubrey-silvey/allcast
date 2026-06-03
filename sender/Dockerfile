@@ -9,7 +9,7 @@ WORKDIR /src
 COPY Cargo.toml ./
 COPY src ./src
 RUN cargo build --release --locked || cargo build --release
-RUN strip target/release/share-screen
+RUN strip target/release/allcast
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     intel-media-va-driver-non-free \
     mesa-va-drivers \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=build /src/target/release/share-screen /usr/local/bin/share-screen
+COPY --from=build /src/target/release/allcast /usr/local/bin/allcast
 ENV BIND=0.0.0.0:8080
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/share-screen"]
+ENTRYPOINT ["/usr/local/bin/allcast"]

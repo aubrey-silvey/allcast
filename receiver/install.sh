@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install share-screen-receiver as a user-level systemd service that auto-
+# Install allcast-receiver as a user-level systemd service that auto-
 # activates on RTP traffic. Run as the user that owns the labwc / Wayland
 # session (typically `sis` on the Pi 5 kiosk).
 #
@@ -21,22 +21,22 @@ done
 
 if [ "$DO_BUILD" = 1 ]; then
     echo "==> Building release binary"
-    ( cd "$REPO_DIR" && cargo build --release -p share-screen-receiver )
+    ( cd "$REPO_DIR" && cargo build --release -p allcast-receiver )
 fi
 
-BIN="$REPO_DIR/target/release/share-screen-receiver"
-[ -x "$BIN" ] || { echo "binary not found at $BIN — run without --no-build, or `cargo build --release -p share-screen-receiver` first"; exit 1; }
+BIN="$REPO_DIR/target/release/allcast-receiver"
+[ -x "$BIN" ] || { echo "binary not found at $BIN — run without --no-build, or `cargo build --release -p allcast-receiver` first"; exit 1; }
 
-echo "==> Installing binary to /usr/local/bin/share-screen-receiver"
-sudo install -m 755 "$BIN" /usr/local/bin/share-screen-receiver
+echo "==> Installing binary to /usr/local/bin/allcast-receiver"
+sudo install -m 755 "$BIN" /usr/local/bin/allcast-receiver
 
-ENV_FILE="$HOME/.config/share-screen-receiver.env"
+ENV_FILE="$HOME/.config/allcast-receiver.env"
 if [ ! -f "$ENV_FILE" ]; then
     echo "==> Writing default env file at $ENV_FILE"
     mkdir -p "$(dirname "$ENV_FILE")"
     cat > "$ENV_FILE" <<'EOF'
-# share-screen-receiver runtime config.
-# Reload after edits with:  systemctl --user restart share-screen-receiver
+# allcast-receiver runtime config.
+# Reload after edits with:  systemctl --user restart allcast-receiver
 
 LISTEN=5004
 CODEC=h265
@@ -53,21 +53,21 @@ fi
 
 UNIT_DIR="$HOME/.config/systemd/user"
 mkdir -p "$UNIT_DIR"
-install -m 644 "$REPO_DIR/receiver/contrib/share-screen-receiver.service" "$UNIT_DIR/"
+install -m 644 "$REPO_DIR/receiver/contrib/allcast-receiver.service" "$UNIT_DIR/"
 
 echo "==> Reloading systemd user units"
 systemctl --user daemon-reload
 
-echo "==> Enabling + starting share-screen-receiver"
-systemctl --user enable --now share-screen-receiver.service
+echo "==> Enabling + starting allcast-receiver"
+systemctl --user enable --now allcast-receiver.service
 
 echo
 echo "Done. Status:"
-systemctl --user --no-pager status share-screen-receiver.service | head -12
+systemctl --user --no-pager status allcast-receiver.service | head -12
 echo
 echo "Useful:"
-echo "  journalctl --user -u share-screen-receiver -f          # follow logs"
-echo "  systemctl --user restart share-screen-receiver          # reload config"
-echo "  systemctl --user stop share-screen-receiver             # stop"
-echo "  systemctl --user disable share-screen-receiver          # don't start on session"
+echo "  journalctl --user -u allcast-receiver -f          # follow logs"
+echo "  systemctl --user restart allcast-receiver          # reload config"
+echo "  systemctl --user stop allcast-receiver             # stop"
+echo "  systemctl --user disable allcast-receiver          # don't start on session"
 echo "  edit $ENV_FILE to tweak"
