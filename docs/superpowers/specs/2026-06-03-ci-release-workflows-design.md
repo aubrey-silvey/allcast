@@ -8,15 +8,15 @@
 
 Establish a branch model and GitHub Actions workflows so that:
 
-1. All feature work reaches the codebase through pull requests into an integration branch (`dev`).
-2. The release branch (`master`) produces tagged releases.
+1. All work reaches the codebase through pull requests into the trunk (`master`).
+2. The trunk (`master`) produces tagged releases.
 3. Release notes / `CHANGELOG.md` are generated automatically from commit history on `master`.
 
 ## Decisions
 
 | Decision | Choice |
 |---|---|
-| Branch model | Keep `master` as the release branch; add `dev` as the integration branch |
+| Branch model | Trunk-based: `master` is the single long-lived branch; all changes via PR, direct pushes blocked (standard open-source flow) |
 | Release tooling | [release-please](https://github.com/googleapis/release-please-action) |
 | Commit convention | Conventional Commits, **documented only** (no CI enforcement) |
 | Versioning | Single shared version across all 3 crates, one tag, one CHANGELOG |
@@ -26,12 +26,12 @@ Establish a branch model and GitHub Actions workflows so that:
 
 ## Branch Model & Flow
 
-- `dev` — integration branch. Created from current `master`. All feature branches PR into `dev`.
-- `master` — release branch. Promoted from `dev` via PR. release-please watches `master`.
+- `master` — the single long-lived trunk. Contributors fork (or branch off `master`) and open PRs
+  targeting `master`. CI gates every PR; direct pushes are blocked. release-please watches `master`.
 
 ```
-feature/* ──PR──▶ dev ──PR──▶ master ──▶ release-please ──▶ tag vX.Y.Z + GitHub Release notes
-                  (CI gates)            (Release PR: CHANGELOG.md + version bumps)
+fork / feature/* ──PR──▶ master ──▶ release-please ──▶ tag vX.Y.Z + GitHub Release notes
+                  (CI gates)        (Release PR: CHANGELOG.md + version bumps)
 ```
 
 release-please operates on `master`: as Conventional Commits land there, it opens/maintains a
@@ -42,7 +42,7 @@ that Release PR creates the git tag `vX.Y.Z` and a GitHub Release whose body is 
 
 ### 1. `.github/workflows/ci.yml`
 
-- **Triggers:** `pull_request` targeting `dev`; `push` to `dev` and `master`.
+- **Triggers:** `pull_request` targeting `master`; `push` to `master`.
 - **Runner:** `ubuntu-latest`.
 - **System deps step** (required — crates link system GStreamer; `eframe` needs X11/Wayland libs):
   ```
@@ -54,7 +54,7 @@ that Release PR creates the git tag `vX.Y.Z` and a GitHub Release whose body is 
 - **Steps:** checkout → install system deps → `dtolnay/rust-toolchain@stable` (with `clippy`) →
   `Swatinem/rust-cache` → `cargo build --workspace --locked` → `cargo test --workspace --locked` →
   `cargo clippy --workspace --all-targets -- -D warnings`.
-- These three jobs/steps are the **required status checks** for the `dev` branch protection rule.
+- These three jobs/steps are the **required status checks** for the `master` branch protection rule.
 
 ### 2. `.github/workflows/release-please.yml`
 
@@ -78,16 +78,16 @@ that Release PR creates the git tag `vX.Y.Z` and a GitHub Release whose body is 
 
 ### 5. `CONTRIBUTING.md` (commit convention doc)
 
-- Documents the branch flow (PR → `dev`, promote → `master`).
+- Documents the branch flow (fork/branch → PR → `master`).
 - Documents Conventional Commit prefixes (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, etc.)
   and that they drive the changelog and version bump (`feat` → minor, `fix` → patch,
   `feat!`/`BREAKING CHANGE` → major).
 
 ### 6. Branch protection (applied via `gh api`, not committed files)
 
-- `dev`: require a pull request before merging; require the CI status checks to pass.
-- `master`: require a pull request before merging (blocks direct pushes; only promotion/Release PRs land).
-- Recorded as exact `gh api` commands in the implementation plan for reproducibility.
+- `master`: require a pull request before merging (blocks direct pushes), and require the CI status
+  check (`build / test / clippy`) to pass before merge.
+- Requires repo **admin** to apply. Recorded as exact `gh api` commands in the implementation plan.
 
 ## Error Handling / Edge Cases
 
@@ -102,10 +102,10 @@ that Release PR creates the git tag `vX.Y.Z` and a GitHub Release whose body is 
 
 ## Testing / Verification
 
-- Open a throwaway PR into `dev` to confirm CI triggers and all three checks run.
+- Open a PR into `master` to confirm CI triggers and all three checks run.
 - Land a `feat:`/`fix:` commit on `master` and confirm release-please opens a Release PR with a
   populated `CHANGELOG.md` and synced crate versions.
-- Confirm branch-protection rules reject a direct push to `master` and an unreviewed merge to `dev`.
+- Confirm the branch-protection rule rejects a direct push to `master`.
 
 ## Files Touched
 
@@ -114,5 +114,4 @@ that Release PR creates the git tag `vX.Y.Z` and a GitHub Release whose body is 
 - `release-please-config.json` (new)
 - `.release-please-manifest.json` (new)
 - `CONTRIBUTING.md` (new)
-- `dev` branch (new, off `master`)
-- Branch protection rules on `dev` and `master` (via `gh api`)
+- Branch protection rule on `master` (via `gh api`)

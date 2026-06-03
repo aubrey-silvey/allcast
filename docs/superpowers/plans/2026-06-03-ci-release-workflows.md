@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a `dev`-integration / `master`-release branch model with GitHub Actions for CI and release-please-driven tagged releases + changelog.
+**Goal:** Add a trunk-based (`master`-only) branch model with GitHub Actions for CI and release-please-driven tagged releases + changelog.
 
-**Architecture:** Feature branches PR into `dev` (gated by a CI workflow running build/test/clippy with system GStreamer + GUI libs). `dev` is promoted to `master` via PR. release-please watches `master`, maintains a Release PR (CHANGELOG.md + lockstep version bumps across the 3 crates), and on merge creates tag `vX.Y.Z` + a GitHub Release with generated notes. Branch protection on both branches is applied via `gh api`.
+**Architecture:** Contributors fork or branch off `master` and open PRs targeting `master` (gated by a CI workflow running build/test/clippy with system GStreamer + GUI libs). release-please watches `master`, maintains a Release PR (CHANGELOG.md + lockstep version bumps across the 3 crates), and on merge creates tag `vX.Y.Z` + a GitHub Release with generated notes. Branch protection on `master` is applied via `gh api` (admin required).
 
 **Tech Stack:** GitHub Actions, `googleapis/release-please-action@v4`, `dtolnay/rust-toolchain`, `Swatinem/rust-cache`, Rust/Cargo workspace, `gh` CLI.
 
@@ -22,7 +22,7 @@
 | `.release-please-manifest.json` | Tracks current version per package (seed `0.1.0`) |
 | `CONTRIBUTING.md` | Branch flow + Conventional Commit convention docs |
 
-All work happens on a branch off `master`; the workflow files must reach `master` (via `dev` → PR) before their triggers fire on the intended branches.
+All work happens on a branch off `master`; the workflow files must be merged into `master` (via PR) before their triggers fire on the intended branches.
 
 ---
 
@@ -40,9 +40,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [dev]
+    branches: [master]
   push:
-    branches: [dev, master]
+    branches: [master]
 
 jobs:
   check:
@@ -91,7 +91,7 @@ Expected: builds clean; clippy exits 0. (If clippy reports pre-existing warnings
 
 ```bash
 git add .github/workflows/ci.yml
-git commit -m "ci: add build/test/clippy workflow for dev and master"
+git commit -m "ci: add build/test/clippy workflow for PRs to master"
 ```
 
 ---
@@ -218,18 +218,20 @@ Create `CONTRIBUTING.md`:
 
 ## Branch model
 
-- `dev` — integration branch. **All changes land here via pull request.**
-- `master` — release branch. Promoted from `dev` via pull request. Direct pushes are blocked.
+We use a trunk-based flow: `master` is the single long-lived branch. All changes land via
+pull request, and direct pushes to `master` are blocked.
 
 ```
-feature/* ──PR──▶ dev ──PR──▶ master ──▶ tagged release + notes
+fork / feature/* ──PR──▶ master ──▶ tagged release + notes
 ```
 
 ## Pull requests
 
-1. Branch off `dev`: `git checkout dev && git pull && git checkout -b feature/my-change`.
-2. Open a PR into `dev`. CI must pass (`cargo build`, `cargo test`, `cargo clippy -- -D warnings`).
-3. Releases are cut by promoting `dev` into `master` via PR.
+1. Fork the repo (external contributors) or branch off `master`:
+   `git checkout master && git pull && git checkout -b feature/my-change`.
+2. Open a PR targeting `master`. CI must pass (`cargo build`, `cargo test`,
+   `cargo clippy -- -D warnings`).
+3. Once merged, release-please maintains a "release" PR; merging it tags the release.
 
 ## Commit messages — Conventional Commits
 
@@ -263,7 +265,7 @@ git commit -m "docs: add CONTRIBUTING with branch flow and commit convention"
 
 ---
 
-### Task 5: Create the `dev` branch and open the integration PR
+### Task 5: Push the feature branch and open the PR into `master`
 
 **Files:** none (git/GitHub state)
 
@@ -272,120 +274,89 @@ git commit -m "docs: add CONTRIBUTING with branch flow and commit convention"
 Run: `git status --porcelain`
 Expected: empty output.
 
-- [ ] **Step 2: Create `dev` from the current `master` and push it**
+- [ ] **Step 2: Push the feature branch and open a PR into `master`**
 
 ```bash
-git checkout master
-git pull origin master
-git checkout -b dev
-git push -u origin dev
-```
-Expected: `dev` branch created on origin.
-
-- [ ] **Step 3: Push the feature branch and open a PR into `dev`**
-
-```bash
-git checkout -          # back to the workflow feature branch
 git push -u origin HEAD
-gh pr create --base dev --title "ci: add CI + release-please workflows and contributing docs" \
+gh pr create --base master --title "ci: add CI + release-please workflows and contributing docs" \
   --body "Adds CI (build/test/clippy), release-please config + workflow, and CONTRIBUTING. Spec: docs/superpowers/specs/2026-06-03-ci-release-workflows-design.md"
 ```
 Expected: PR URL printed; CI workflow begins running against the PR.
 
-- [ ] **Step 4: Verify CI triggered on the PR**
+- [ ] **Step 3: Verify CI triggered on the PR**
 
 Run: `gh pr checks`
-Expected: the `CI / build / test / clippy` check is listed (pending or passing).
+Expected: the `build / test / clippy` check is listed (pending or passing).
 
 ---
 
 ### Task 6: Apply branch protection via `gh api`
 
-**Files:** none (GitHub repo settings). Requires admin auth: confirm with `gh auth status`.
+**Files:** none (GitHub repo settings). Requires repo **admin**.
 
 - [ ] **Step 1: Confirm admin access**
 
 Run: `gh api repos/aubrey-silvey/allcast --jq '.permissions.admin'`
-Expected: `true`. (If `false`, stop — ask the user to run these as an admin.)
+Expected: `true`. (If `false`, stop — hand these commands to a repo admin.)
 
-- [ ] **Step 2: Protect `dev` (require PR + passing CI check)**
-
-```bash
-gh api -X PUT repos/aubrey-silvey/allcast/branches/dev/protection \
-  -H "Accept: application/vnd.github+json" \
-  -f "required_status_checks[strict]=true" \
-  -f "required_status_checks[contexts][]=build / test / clippy" \
-  -f "enforce_admins=false" \
-  -f "required_pull_request_reviews[required_approving_review_count]=1" \
-  -f "restrictions=null"
-```
-Expected: JSON response describing the protection rule (HTTP 200).
-
-> Note: the status check context name is the workflow **job name** as GitHub reports it
-> (`build / test / clippy`). If `gh pr checks` shows a different string, use that exact value here.
-
-- [ ] **Step 3: Protect `master` (require PR; block direct pushes)**
+- [ ] **Step 2: Protect `master` (require PR + passing CI check)**
 
 ```bash
 gh api -X PUT repos/aubrey-silvey/allcast/branches/master/protection \
-  -H "Accept: application/vnd.github+json" \
-  -f "required_status_checks=null" \
-  -f "enforce_admins=false" \
-  -f "required_pull_request_reviews[required_approving_review_count]=1" \
-  -f "restrictions=null"
+  -H "Accept: application/vnd.github+json" --input - <<'JSON'
+{
+  "required_status_checks": { "strict": true, "contexts": ["build / test / clippy"] },
+  "enforce_admins": false,
+  "required_pull_request_reviews": { "required_approving_review_count": 1 },
+  "restrictions": null
+}
+JSON
 ```
 Expected: JSON response describing the protection rule (HTTP 200).
 
-- [ ] **Step 4: Verify both rules exist**
+> Notes:
+> - The status check context is the workflow **job name** as GitHub reports it
+>   (`build / test / clippy`). Confirm with `gh pr checks` and use that exact value.
+> - For a solo maintainer, set `required_approving_review_count` to `0` — still requires a PR +
+>   green CI, but allows self-merge without a second reviewer.
 
-Run: `gh api repos/aubrey-silvey/allcast/branches/dev/protection --jq '.required_pull_request_reviews != null' && gh api repos/aubrey-silvey/allcast/branches/master/protection --jq '.required_pull_request_reviews != null'`
-Expected: `true` then `true`.
+- [ ] **Step 3: Verify the rule exists**
+
+Run: `gh api repos/aubrey-silvey/allcast/branches/master/protection --jq '.required_pull_request_reviews != null'`
+Expected: `true`.
 
 ---
 
-### Task 7: Merge to dev, promote to master, verify release-please
+### Task 7: Merge the PR and verify release-please
 
 **Files:** none (git/GitHub state)
 
-- [ ] **Step 1: Merge the PR into `dev` once CI is green**
+- [ ] **Step 1: Merge the PR into `master` once CI is green**
 
 Run: `gh pr merge --squash --delete-branch`
-Expected: PR merged into `dev`.
+Expected: PR merged into `master`; the release-please workflow runs on the push.
 
-> Use a `feat:` or `fix:` prefixed merge/squash title so release-please produces a versioned release
-> (a `ci:`/`docs:`-only history yields no version bump and no Release PR).
+> This bootstrap PR is `ci:`/`docs:` only, so release-please will **not** open a Release PR yet —
+> that is expected. The first Release PR appears once the first `feat:`/`fix:` commit lands on
+> `master`. To bootstrap a release immediately instead, squash-merge with a `feat:` title.
 
-- [ ] **Step 2: Open the promotion PR `dev` → `master`**
+- [ ] **Step 2: Verify release-please ran**
 
-```bash
-gh pr create --base master --head dev \
-  --title "feat: initial CI and release automation" \
-  --body "Promote dev to master to bootstrap release-please."
-```
-Expected: PR URL printed.
+Run: `gh run list --workflow=release-please.yml --limit 1`
+Expected: a completed run against `master`. (No open Release PR yet if history is `ci:`/`docs:` only.)
 
-- [ ] **Step 3: Merge the promotion PR**
+- [ ] **Step 3: (Later) Confirm the first real feature opens a Release PR**
 
-Run: `gh pr merge <number> --merge`
-Expected: merged into `master`; the release-please workflow runs on the push.
-
-- [ ] **Step 4: Verify release-please opened a Release PR**
-
-Run: `gh pr list --state open --search "release-please"`
-Expected: a "chore(main): release ..." PR exists, with `CHANGELOG.md` and bumped crate versions.
-
-- [ ] **Step 5: (Optional) Cut the first release**
-
-Run: `gh pr merge <release-pr-number> --squash`
-Then: `gh release list`
-Expected: a `vX.Y.Z` tag and GitHub Release with generated notes appear.
+After a `feat:`/`fix:` commit lands on `master`, run: `gh pr list --state open --search "release"`
+Expected: a "chore: release ..." PR with `CHANGELOG.md` and bumped crate versions. Merging it
+creates the `vX.Y.Z` tag and GitHub Release (`gh release list`).
 
 ---
 
 ## Self-Review
 
 **Spec coverage:**
-- PR-into-dev gating → Task 1 (CI) + Task 6 (dev protection). ✓
+- PR-into-master gating → Task 1 (CI) + Task 6 (master protection). ✓
 - master tagged releases → Task 3 + Task 7. ✓
 - Release notes from commits → Task 2 + Task 3 (release-please). ✓
 - Single shared version → Task 2 (`linked-versions` + `cargo-workspace`). ✓
