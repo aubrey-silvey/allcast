@@ -9,7 +9,10 @@ use anyhow::Result;
 pub enum Source {
     KdeKScreen,
     WlrRandr,
+    // Constructed only on their respective OS build paths; dead on other targets.
+    #[allow(dead_code)]
     Cocoa,
+    #[allow(dead_code)]
     Win32,
     None,
 }
