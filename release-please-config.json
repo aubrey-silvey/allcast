@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "rust",
+  "separate-pull-requests": false,
+  "plugins": [
+    "cargo-workspace",
+    {
+      "type": "linked-versions",
+      "group-name": "allcast",
+      "components": ["allcast", "allcast-sender", "allcast-receiver"]
+    }
+  ],
+  "packages": {
+    "allcast": { "component": "allcast" },
+    "sender": { "component": "allcast-sender" },
+    "receiver": { "component": "allcast-receiver" }
+  }
+}
