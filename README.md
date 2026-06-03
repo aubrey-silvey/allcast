@@ -159,11 +159,3 @@ useful for the benchmarks recorded above.
   default) restores the picture.
 - **One peer per active sender.** Multiple destinations need
   `multiudpsink` — code change is small but not done yet.
-
-## Repository
-
-- Remote: `git@github.com:aubrey-silvey/allcast.git` (GitHub). `master` is
-  the trunk.
-- Pi 5 receiver target: `monitor2` / `10.0.17.84`. Keyless SSH from this
-  dev box, passwordless sudo on the Pi for the `sis` account; details in
-  the local memory.
