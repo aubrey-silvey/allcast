@@ -2,18 +2,21 @@
 
 ## Branch model
 
-- `dev` — integration branch. **All changes land here via pull request.**
-- `master` — release branch. Promoted from `dev` via pull request. Direct pushes are blocked.
+We use a trunk-based flow: `master` is the single long-lived branch. All changes land via
+pull request, and direct pushes to `master` are blocked.
 
 ```
-feature/* ──PR──▶ dev ──PR──▶ master ──▶ tagged release + notes
+fork / feature/* ──PR──▶ master ──▶ tagged release + notes
 ```
 
 ## Pull requests
 
-1. Branch off `dev`: `git checkout dev && git pull && git checkout -b feature/my-change`.
-2. Open a PR into `dev`. CI must pass (`cargo build`, `cargo test`, `cargo clippy -- -D warnings`).
-3. Releases are cut by promoting `dev` into `master` via PR.
+1. Fork the repo (external contributors) or branch off `master`:
+   `git checkout master && git pull && git checkout -b feature/my-change`.
+2. Open a PR targeting `master`. CI must pass (`cargo build`, `cargo test`,
+   `cargo clippy -- -D warnings`).
+3. Once merged, [release-please](https://github.com/googleapis/release-please) maintains a
+   "release" PR; merging it tags the release and publishes notes — no manual release steps.
 
 ## Commit messages — Conventional Commits
 
