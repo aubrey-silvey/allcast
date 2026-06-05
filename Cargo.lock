@@ -48,7 +48,7 @@ dependencies = [
 
 [[package]]
 name = "allcast"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -65,7 +65,7 @@ dependencies = [
 
 [[package]]
 name = "allcast-receiver"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -77,7 +77,7 @@ dependencies = [
 
 [[package]]
 name = "allcast-sender"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
