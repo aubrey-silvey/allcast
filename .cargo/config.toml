@@ -1,0 +1,7 @@
+# Convenience alias: build the unified `allcast` binary as a lean headless
+# receiver — `--no-default-features` drops the `gui` feature and with it the
+# entire eframe/winit/wayland/x11/glow dependency tree (~57% of the crate
+# graph). This is the target build shape for the Pi 5 receiver once it
+# migrates off the standalone `allcast-receiver` crate.
+[alias]
+headless = "build -p allcast --no-default-features --release"

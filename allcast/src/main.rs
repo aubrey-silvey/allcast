@@ -1,4 +1,5 @@
 mod config;
+#[cfg(feature = "gui")]
 mod gui;
 mod monitor;
 mod platform;
@@ -54,9 +55,16 @@ fn main() -> Result<()> {
             }
         }
         Some(Command::Config) => {
-            let existing = config::load().ok();
-            gui::run(existing);
-            Ok(())
+            #[cfg(feature = "gui")]
+            {
+                let existing = config::load().ok();
+                gui::run(existing);
+                Ok(())
+            }
+            #[cfg(not(feature = "gui"))]
+            {
+                print_headless_config_notice()
+            }
         }
         Some(Command::Send) => sender::run(&config::load()?, stop),
         Some(Command::Recv) => receiver::run(&config::load()?, stop),
@@ -74,6 +82,7 @@ fn main() -> Result<()> {
     }
 }
 
+#[cfg(feature = "gui")]
 fn run_first_run(stop: Arc<AtomicBool>) -> Result<()> {
     match gui::run(None) {
         Some(cfg) => match cfg.role {
@@ -82,6 +91,32 @@ fn run_first_run(stop: Arc<AtomicBool>) -> Result<()> {
         },
         None => Ok(()),
     }
+}
+
+/// Headless builds (compiled without the `gui` feature) have no first-run
+/// window, so there is nothing to launch — guide the user to a config file.
+#[cfg(not(feature = "gui"))]
+fn run_first_run(_stop: Arc<AtomicBool>) -> Result<()> {
+    print_headless_config_notice()
+}
+
+/// Tell the user how to configure a headless build by hand, printing a
+/// ready-to-edit default config. Handy for deploying to a Pi receiver.
+#[cfg(not(feature = "gui"))]
+fn print_headless_config_notice() -> Result<()> {
+    let path = config::config_path()?;
+    eprintln!("This build was compiled without the GUI (no `gui` feature), so");
+    eprintln!("there is no configuration window. Edit the config directly at:");
+    eprintln!("  {}", path.display());
+    if !config::exists() {
+        eprintln!();
+        eprintln!("No config exists yet — here is a default to start from:");
+        eprintln!();
+        println!("{}", toml::to_string_pretty(&config::Config::default())?);
+    }
+    eprintln!();
+    eprintln!("Then run `allcast send` or `allcast recv`.");
+    Ok(())
 }
 
 fn dispatch_saved_role(stop: Arc<AtomicBool>) -> Result<()> {
