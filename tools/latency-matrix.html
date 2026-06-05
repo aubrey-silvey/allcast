@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>allcast latency matrix</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #000; color: #00ff66;
+    font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+    overflow: hidden; cursor: none;
+  }
+  #wrap { display: flex; flex-direction: column; height: 100vh; }
+  /* Big primary clock — the number you OCR / read off the camera frame. */
+  #clock {
+    flex: 0 0 auto;
+    text-align: center;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.0;
+    padding: 2vh 0 1vh;
+    font-size: 16vh;
+    letter-spacing: 0.02em;
+    text-shadow: 0 0 12px #00ff66;
+  }
+  #sub {
+    flex: 0 0 auto;
+    text-align: center;
+    font-size: 3.2vh;
+    color: #d7ffe6;
+    padding-bottom: 1vh;
+  }
+  /* The matrix: each cell shows the same ms value the instant it painted.
+     Under a fast camera shutter you can read any cell, and tearing shows up
+     as cells disagreeing within a single captured frame. */
+  #matrix {
+    flex: 1 1 auto;
+    display: grid;
+    gap: 2px;
+    padding: 0 1vw 1vh;
+  }
+  .cell {
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid #053; border-radius: 3px;
+    font-variant-numeric: tabular-nums;
+    font-weight: bold;
+    color: #00ff66;
+    background: #010;
+    overflow: hidden;
+  }
+  /* Phase-tinted columns so motion is obvious even when digits blur. */
+  .cell.alt { color: #66ddff; }
+  #help {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    text-align: center; font-size: 1.6vh; color: #064; padding: 4px;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="clock">--:--:--.---</div>
+  <div id="sub">frame <span id="frame">0</span> &nbsp;|&nbsp; epoch-ms <span id="epoch">0</span> &nbsp;|&nbsp; rAF dt <span id="dt">0</span>ms</div>
+  <div id="matrix"></div>
+</div>
+<div id="help">F = fullscreen &nbsp;·&nbsp; +/- grid size &nbsp;·&nbsp; SPACE pause &nbsp;·&nbsp; read the same value on source &amp; remote, subtract = glass-to-glass latency</div>
+<script>
+(function () {
+  const clockEl = document.getElementById('clock');
+  const frameEl = document.getElementById('frame');
+  const epochEl = document.getElementById('epoch');
+  const dtEl    = document.getElementById('dt');
+  const matrix  = document.getElementById('matrix');
+
+  let cols = 12, rows = 7, cells = [];
+  let frame = 0, paused = false, last = 0;
+
+  function buildGrid() {
+    matrix.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    matrix.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+    matrix.innerHTML = '';
+    cells = [];
+    const n = cols * rows;
+    // Font scales to roughly fill a cell.
+    const fs = Math.max(1.0, Math.min(90 / cols, 70 / rows));
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement('div');
+      d.className = 'cell' + (((i + Math.floor(i / cols)) % 2) ? ' alt' : '');
+      d.style.fontSize = fs + 'vh';
+      matrix.appendChild(d);
+      cells.push(d);
+    }
+  }
+
+  function fmt(ms) {
+    const d = new Date(ms);
+    const p2 = (x) => String(x).padStart(2, '0');
+    const p3 = (x) => String(x).padStart(3, '0');
+    return `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${p3(d.getMilliseconds())}`;
+  }
+
+  function tick(ts) {
+    if (!paused) {
+      const now = Date.now();
+      const clockStr = fmt(now);
+      clockEl.textContent = clockStr;
+      frameEl.textContent = frame;
+      epochEl.textContent = now;
+      dtEl.textContent = last ? Math.round(ts - last) : 0;
+      last = ts;
+
+      // Last 3 digits of the ms clock, per cell, so every cell changes every
+      // frame and a single captured video frame is unambiguously timestamped.
+      const tag = String(now % 1000).padStart(3, '0');
+      for (let i = 0; i < cells.length; i++) cells[i].textContent = tag;
+      frame++;
+    }
+    requestAnimationFrame(tick);
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'f' || e.key === 'F') {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    } else if (e.key === ' ') {
+      paused = !paused; e.preventDefault();
+    } else if (e.key === '+' || e.key === '=') {
+      cols = Math.min(cols + 1, 40); rows = Math.min(rows + 1, 24); buildGrid();
+    } else if (e.key === '-' || e.key === '_') {
+      cols = Math.max(cols - 1, 2); rows = Math.max(rows - 1, 1); buildGrid();
+    }
+  });
+
+  buildGrid();
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

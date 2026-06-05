@@ -1,0 +1,22 @@
+# Standalone prototype: detached from the parent allcast workspace so it can be
+# built/benched on its own (incl. on the Pi) without touching the main build.
+[workspace]
+
+[package]
+name = "detiler"
+version = "0.1.0"
+edition = "2021"
+description = "Prototype NEON detiler for the Pi HEVC decoder's NV12_COL128 output"
+
+[lib]
+name = "detiler"
+path = "src/lib.rs"
+
+[[bin]]
+name = "detile-bench"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
