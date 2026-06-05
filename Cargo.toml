@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["sender", "receiver", "allcast"]
+members = ["sender", "receiver", "allcast", "telemetry"]
+exclude = ["prototypes/detiler"]
 
 [workspace.dependencies]
 anyhow = "1"
@@ -9,6 +10,11 @@ ctrlc = "3"
 gstreamer = "0.23"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+allcast-telemetry = { path = "telemetry" }
+tonic = "0.12"
+prost = "0.13"
+tonic-build = "0.12"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
 
 [profile.release]
 lto = "thin"

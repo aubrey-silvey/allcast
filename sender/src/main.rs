@@ -1,8 +1,15 @@
+mod telemetry;
+
 use anyhow::{Result, anyhow};
 use clap::{Parser, ValueEnum};
 use gstreamer as gst;
 use gstreamer::prelude::*;
+use gstreamer_video as gst_video;
+use telemetry::{EncoderHandle, ThrottleConfig};
 use std::net::ToSocketAddrs;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
 
 #[derive(Parser, Debug, Clone)]
@@ -56,6 +63,31 @@ struct Cli {
     /// QP value when --rate-control=cqp. 22 ≈ visually transparent, 18 ≈ archival.
     #[arg(long, env = "QP", default_value_t = 22)]
     qp: u32,
+
+    /// Keyframe (IDR) interval in milliseconds. Shorter ⇒ a fresh or recovering
+    /// receiver renders sooner, at higher bitrate. 200 ms is responsive for
+    /// desktop; raise it (e.g. 1000) to favour bandwidth over recovery time.
+    #[arg(long, env = "KEYFRAME_MS", default_value_t = 200)]
+    keyframe_ms: u32,
+
+    /// When frames resume after a gap this long (ms), force an IDR immediately
+    /// so the first frame is decodable without waiting for the next periodic
+    /// keyframe. Targets the static-screen → motion case. 0 disables.
+    #[arg(long, env = "IDR_ON_RESUME_MS", default_value_t = 300)]
+    idr_on_resume_ms: u32,
+
+    /// Adapt the encoder bitrate from the receiver's gRPC telemetry (decode
+    /// load, packet loss). Off pins the encoder to --bitrate-kbps.
+    #[arg(long, env = "ADAPTIVE", default_value_t = true, action = clap::ArgAction::Set)]
+    adaptive: bool,
+
+    /// gRPC telemetry port on the receiver (must match its --telemetry-port).
+    #[arg(long, env = "TELEMETRY_PORT", default_value_t = allcast_telemetry::DEFAULT_PORT)]
+    telemetry_port: u16,
+
+    /// Floor for adaptive bitrate (kbps) — the controller never drops below it.
+    #[arg(long, env = "MIN_BITRATE_KBPS", default_value_t = 2000)]
+    min_bitrate_kbps: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -185,8 +217,9 @@ fn build_pipeline(cli: &Cli, encoder: &Encoder) -> Result<gst::Pipeline> {
         ),
     };
     let (host, port) = resolve_dest(&cli.dest)?;
-    // 1 keyframe per second so a fresh receiver renders within ~1s.
-    let keyframe_interval = cli.framerate;
+    // Periodic keyframe cadence derived from the ms budget: a fresh or
+    // recovering receiver renders within ~keyframe_ms instead of a fixed 1s.
+    let keyframe_interval = (((cli.framerate as u64) * (cli.keyframe_ms as u64)) / 1000).max(1) as u32;
     let encoder_args = low_latency_args(
         encoder.gst_element,
         keyframe_interval,
@@ -202,7 +235,7 @@ fn build_pipeline(cli: &Cli, encoder: &Encoder) -> Result<gst::Pipeline> {
     let desc = format!(
         "{source} ! videorate ! videoconvert ! videoscale \
          ! video/x-raw,format=NV12,width={w},height={h},framerate={fr}/1 \
-         ! {enc} {encoder_args} \
+         ! {enc} name=enc {encoder_args} \
          ! {encoding} ! {parse_caps} \
          ! {rtp_pay} pt={pt} mtu={mtu} config-interval=-1 \
          ! udpsink host={host} port={port} sync=false async=false",
@@ -214,15 +247,54 @@ fn build_pipeline(cli: &Cli, encoder: &Encoder) -> Result<gst::Pipeline> {
         pt = cli.pt,
         mtu = cli.mtu,
     );
-    info!(%desc, "building pipeline");
+    info!(%desc, keyframe_interval, "building pipeline");
     let element = gst::parse::launch(&desc)
         .map_err(|e| anyhow!("pipeline parse failed: {e}\n  desc=`{desc}`"))?;
-    element
+    let pipeline = element
         .downcast::<gst::Pipeline>()
-        .map_err(|_| anyhow!("parsed element is not a gst::Pipeline"))
+        .map_err(|_| anyhow!("parsed element is not a gst::Pipeline"))?;
+
+    if cli.idr_on_resume_ms > 0 {
+        install_idr_on_resume(&pipeline, cli.idr_on_resume_ms)?;
+    }
+    Ok(pipeline)
 }
 
-fn run_until_eos_or_error(pipeline: &gst::Pipeline) -> Result<()> {
+/// Watch raw frames entering the encoder; when one arrives after a gap longer
+/// than `gap_ms` (i.e. the screen was static and just changed), ask the encoder
+/// for an immediate IDR via an upstream force-key-unit event. Without this the
+/// first frame after a static period is a P-frame the receiver can't decode
+/// until the next periodic keyframe.
+fn install_idr_on_resume(pipeline: &gst::Pipeline, gap_ms: u32) -> Result<()> {
+    let enc = pipeline
+        .by_name("enc")
+        .ok_or_else(|| anyhow!("encoder element named `enc` missing"))?;
+    let sink_pad = enc
+        .static_pad("sink")
+        .ok_or_else(|| anyhow!("encoder has no `sink` pad"))?;
+    let gap_ns = (gap_ms as i64) * 1_000_000;
+    let last_ns = Arc::new(AtomicI64::new(0));
+    let enc_for_probe = enc.clone();
+    sink_pad.add_probe(gst::PadProbeType::BUFFER, move |_pad, _info| {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos() as i64)
+            .unwrap_or(0);
+        let prev = last_ns.swap(now, Ordering::Relaxed);
+        if prev != 0 && now - prev > gap_ns {
+            let event = gst_video::UpstreamForceKeyUnitEvent::builder()
+                .all_headers(true)
+                .build();
+            if let Some(src_pad) = enc_for_probe.static_pad("src") {
+                src_pad.send_event(event);
+            }
+        }
+        gst::PadProbeReturn::Ok
+    });
+    Ok(())
+}
+
+fn run_until_eos_or_error(pipeline: &gst::Pipeline, stop: &AtomicBool) -> Result<()> {
     let bus = pipeline
         .bus()
         .ok_or_else(|| anyhow!("pipeline has no bus"))?;
@@ -231,23 +303,17 @@ fn run_until_eos_or_error(pipeline: &gst::Pipeline) -> Result<()> {
         .map_err(|e| anyhow!("set_state(Playing) failed: {e}"))?;
     info!("pipeline running; Ctrl-C to stop");
 
-    let (tx, rx) = std::sync::mpsc::channel::<()>();
-    ctrlc::set_handler(move || {
-        let _ = tx.send(());
-    })
-    .ok();
-
-    loop {
-        if rx.try_recv().is_ok() {
+    let result = loop {
+        if stop.load(Ordering::Relaxed) {
             info!("ctrl-c received");
-            break;
+            break Ok(());
         }
         match bus.timed_pop(gst::ClockTime::from_mseconds(200)) {
             None => continue,
             Some(msg) => match msg.view() {
                 gst::MessageView::Eos(_) => {
                     info!("end of stream");
-                    break;
+                    break Ok(());
                 }
                 gst::MessageView::Error(e) => {
                     error!(
@@ -256,7 +322,7 @@ fn run_until_eos_or_error(pipeline: &gst::Pipeline) -> Result<()> {
                         debug = ?e.debug(),
                         "pipeline error"
                     );
-                    return Err(anyhow!("{}", e.error()));
+                    break Err(anyhow!("{}", e.error()));
                 }
                 gst::MessageView::Warning(w) => {
                     warn!(
@@ -268,10 +334,10 @@ fn run_until_eos_or_error(pipeline: &gst::Pipeline) -> Result<()> {
                 _ => {}
             },
         }
-    }
+    };
 
     let _ = pipeline.set_state(gst::State::Null);
-    Ok(())
+    result
 }
 
 fn main() -> Result<()> {
@@ -294,6 +360,68 @@ fn main() -> Result<()> {
         "selected encoder"
     );
 
-    let pipeline = build_pipeline(&cli, &encoder)?;
-    run_until_eos_or_error(&pipeline)
+    // Auto-recover from transient capture failures. The pipewiresrc stream can
+    // stop with `not-negotiated` when the portal renegotiates (resolution/DPMS
+    // change, cursor mode, etc.). The portal session + fd are held by the
+    // parent helper and stay valid, so we just rebuild the GStreamer pipeline
+    // and carry on — no re-picking. Repeated *immediate* failures (a truly dead
+    // fd) make us give up rather than spin.
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_handler = stop.clone();
+    ctrlc::set_handler(move || stop_handler.store(true, Ordering::Relaxed)).ok();
+
+    // Adaptive bitrate: subscribe to the receiver's telemetry and steer the
+    // encoder's bitrate to keep the receiver out of decode-saturation / loss.
+    let enc_handle = EncoderHandle::new();
+    if cli.adaptive {
+        let (receiver_host, _) = resolve_dest(&cli.dest)?;
+        telemetry::spawn(
+            ThrottleConfig {
+                receiver_host,
+                telemetry_port: cli.telemetry_port,
+                interval_ms: 250,
+                max_bitrate_kbps: cli.bitrate_kbps,
+                min_bitrate_kbps: cli.min_bitrate_kbps,
+            },
+            enc_handle.clone(),
+            stop.clone(),
+        );
+    }
+
+    let mut fast_failures = 0u32;
+    while !stop.load(Ordering::Relaxed) {
+        let pipeline = match build_pipeline(&cli, &encoder) {
+            Ok(p) => p,
+            Err(e) => {
+                fast_failures += 1;
+                if fast_failures > 5 {
+                    return Err(e.context("failed to build capture pipeline repeatedly"));
+                }
+                error!(error = %e, attempt = fast_failures, "pipeline build failed — retrying");
+                std::thread::sleep(Duration::from_millis(500));
+                continue;
+            }
+        };
+        // Point the throttle controller at this pipeline's encoder.
+        enc_handle.set(pipeline.by_name("enc"));
+        let started = Instant::now();
+        match run_until_eos_or_error(&pipeline, &stop) {
+            Ok(()) => break, // clean EOS or Ctrl-C
+            Err(e) => {
+                if started.elapsed() < Duration::from_secs(2) {
+                    fast_failures += 1;
+                } else {
+                    fast_failures = 0; // ran for a while, treat as a fresh transient
+                }
+                if fast_failures > 5 {
+                    error!("capture pipeline failing immediately and repeatedly — giving up");
+                    return Err(e);
+                }
+                enc_handle.set(None);
+                warn!(error = %e, "capture pipeline died — restarting (portal session kept)");
+                std::thread::sleep(Duration::from_millis(300));
+            }
+        }
+    }
+    Ok(())
 }

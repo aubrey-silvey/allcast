@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package allcast.telemetry.v1;
+
+// Receiver-side health, streamed to the sender so it can make throttling
+// decisions from real state instead of guessing. The media path stays on
+// RTP/UDP; this is a side-channel control plane only.
+message TelemetrySample {
+  uint64 timestamp_ms = 1;
+  // Decode pipeline is active (vs idle daemon waiting for traffic).
+  bool active = 2;
+  // Receiver process CPU as percent of ONE core (100.0 = one core saturated).
+  // Software decode is single-core-bound, so this is the key throttle signal.
+  double decode_cpu_pct = 3;
+  // Kernel UDP receive-queue backlog in bytes (rising = decoder falling behind).
+  uint32 recv_queue_bytes = 4;
+  // Cumulative SO_RCVBUF overflow drops since boot (delta = recent loss).
+  uint64 rcvbuf_drops = 5;
+  // RTP packets/sec observed at the udpsrc pad.
+  double packet_rate = 6;
+  // Number of CPUs on the receiver (context for decode_cpu_pct).
+  uint32 ncpu = 7;
+}
+
+message SubscribeRequest {
+  // Free-form identifier for logging (e.g. sender host).
+  string sender_id = 1;
+  // Desired sample cadence in milliseconds (server may clamp).
+  uint32 interval_ms = 2;
+}
+
+service Telemetry {
+  // Server streams samples at roughly interval_ms until the client disconnects.
+  rpc Subscribe(SubscribeRequest) returns (stream TelemetrySample);
+}
