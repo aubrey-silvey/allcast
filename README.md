@@ -107,6 +107,24 @@ allcast monitors   # debug: list detected monitors
 Config lives in `~/.config/allcast/config.toml` (XDG paths on Mac and
 Windows respectively).
 
+#### Headless build (no GUI)
+
+The egui first-run/config window is behind a default-on `gui` feature. A
+headless host — a Pi 5 receiver with no need for the in-app config dialog —
+can drop it and skip the entire eframe/winit/wayland/x11/glow dependency
+tree (~57% of the crate graph, a big clean-build win on the Pi's 4 cores):
+
+```sh
+cargo build -p allcast --no-default-features --release
+cargo headless        # workspace alias for the line above
+```
+
+This only removes the *config window*. Video still displays via the
+GStreamer sink (`waylandsink`/`kmssink`) — that's part of `gstreamer`, not
+eframe. Configure a headless build by hand: run `allcast config` (it prints
+the config path and a ready-to-edit default TOML), drop the file in place,
+then `allcast recv`.
+
 ## Architecture decisions worth knowing
 
 - **No HTTP / no negotiation.** Earlier the project ran WHEP (HTTP-based
