@@ -32,10 +32,13 @@ struct Cli {
     #[arg(long, env = "JITTER_MS", default_value_t = 10)]
     jitter_ms: u32,
 
-    /// GStreamer sink element + properties. `sync=false` is important for
-    /// low-latency live streams — without it the sink waits for the pipeline
-    /// clock before rendering, costing up to one frame per stage.
-    #[arg(long, env = "SINK", default_value = "waylandsink fullscreen=true sync=false")]
+    /// GStreamer sink element + properties. Default is chosen per-platform by
+    /// `default_sink()`: a vsync'd `kmssink` on a Raspberry Pi, else
+    /// `waylandsink ... sync=false`. `sync=false` shaves up to a frame of
+    /// latency on a compositor, but on the Pi's bare-KMS `kmssink` it causes a
+    /// periodic ~14 s stall (→ tearing + false idle-teardown white-flashes), so
+    /// the Pi default keeps vsync. Override with `--sink`/`SINK` as needed.
+    #[arg(long, env = "SINK", default_value_t = default_sink())]
     sink: String,
 
     /// Wayland output name to render on (e.g. `HDMI-A-1`). Currently
@@ -70,6 +73,25 @@ struct Cli {
     /// 0 disables it.
     #[arg(long, env = "TELEMETRY_PORT", default_value_t = allcast_telemetry::DEFAULT_PORT)]
     telemetry_port: u16,
+}
+
+/// True on a Raspberry Pi (reads the device-tree model).
+fn is_raspberry_pi() -> bool {
+    std::fs::read_to_string("/proc/device-tree/model")
+        .map(|m| m.contains("Raspberry Pi"))
+        .unwrap_or(false)
+}
+
+/// Per-platform default sink. On the Pi the receiver runs on bare KMS, where
+/// `kmssink` with `sync=false` stalls ~every 14 s (tearing + false idle
+/// teardowns); vsync (kmssink's default) fixes it at the cost of ~1 frame. On a
+/// normal compositor we keep the low-latency `waylandsink ... sync=false`.
+fn default_sink() -> String {
+    if is_raspberry_pi() {
+        "kmssink".to_string()
+    } else {
+        "waylandsink fullscreen=true sync=false".to_string()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
