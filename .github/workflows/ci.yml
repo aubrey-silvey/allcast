@@ -9,7 +9,7 @@ on:
 jobs:
   check:
     name: build / test / clippy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
